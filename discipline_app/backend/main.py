@@ -22,6 +22,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+def startup_event():
+    print("🚀 FastAPI startup event triggered")
+
+    init_db()
+    init_addiction_db()
+
+    watcher = threading.Thread(
+        target=background_time_watcher,
+        daemon=True
+    )
+    watcher.start()
+
+    if ADDICTION_MONITOR_AVAILABLE:
+        monitor = threading.Thread(
+            target=addiction_monitor_loop,
+            daemon=True
+        )
+        monitor.start()
+
 # Check if running on Windows (for local development with addiction monitor)
 IS_WINDOWS = platform.system() == 'Windows'
 
@@ -197,46 +217,5 @@ def delete_routine(routine_id: int):
         return {"error": "Routine not found"}
 
 if __name__ == "__main__":
-    print("\n" + "=" * 60)
-    print("🚀 STARTING DISCIPLINE APP")
-    print("=" * 60)
-    print(f"Platform: {platform.system()}")
-    
-    # Initialize databases
-    print("📦 Initializing databases...")
-    init_db()
-    init_addiction_db()
-    print("✅ Databases ready")
-    
-    # Start routine watcher thread
-    print("⏰ Starting routine watcher...")
-    watcher = threading.Thread(
-        target=background_time_watcher,
-        daemon=True
-    )
-    watcher.start()
-    print("✅ Routine watcher running")
-    
-    # Start addiction monitor thread (only on Windows)
-    if ADDICTION_MONITOR_AVAILABLE:
-        print("🛡️  Starting addiction monitor...")
-        monitor = threading.Thread(
-            target=addiction_monitor_loop,
-            daemon=True
-        )
-        monitor.start()
-        print("✅ Addiction monitor running (Windows)")
-    else:
-        print("ℹ️  Addiction monitor disabled (cloud deployment)")
-        print("   Mobile app will log blocks via API")
-    
-    print("\n" + "=" * 60)
-    print("✅ ALL SYSTEMS READY")
-    print("=" * 60)
-    print("API Server: http://0.0.0.0:8000")
-    print("Routine Reminders: Active")
-    print(f"Addiction Monitor: {'Active (PC)' if ADDICTION_MONITOR_AVAILABLE else 'Mobile API'}")
-    print("=" * 60 + "\n")
-    
-    # Start API server
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
