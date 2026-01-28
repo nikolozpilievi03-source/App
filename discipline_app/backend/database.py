@@ -10,6 +10,8 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
+    
+    # Create table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS routines (
         id INTEGER PRIMARY KEY,
@@ -24,6 +26,17 @@ def init_db():
         user_id TEXT DEFAULT 'default'
     )
     """)
+    
+    # Migration: Add user_id column if it doesn't exist
+    try:
+        cursor.execute("ALTER TABLE routines ADD COLUMN user_id TEXT DEFAULT 'default'")
+        print("✅ Added user_id column to routines table")
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" in str(e):
+            print("ℹ️  user_id column already exists")
+        else:
+            print(f"⚠️  Migration error: {e}")
+    
     conn.commit()
     conn.close()
 
@@ -52,7 +65,7 @@ def insert_routine(routine: Routine):
         routine.personality,
         routine.streak,
         routine.failures,
-        routine.user_id
+        routine.user_id if hasattr(routine, 'user_id') else 'default'
     ))
     conn.commit()
     conn.close()
