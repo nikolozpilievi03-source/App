@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 
 class ApiService {
   // Change this to your IP!
-  static const String baseUrl = 'https://new-project-ur5v.onrender.com/';
+  static const String baseUrl = 'https://new-project-ur5v.onrender.com';
   
   static Future<bool> testConnection() async {
     try {
