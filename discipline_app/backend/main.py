@@ -118,10 +118,14 @@ def create_routines(routines: List[Routine]):
     return {"created": len(routines)}
 
 @app.get("/routines")
-def list_routines():
+def list_routines(user_id: str = "default"):
     routines = get_all_routines()
+    
+    # Filter by user_id
+    user_routines = [r for r in routines if getattr(r, 'user_id', None) == user_id]
+    
     updated = []
-    for routine in routines:
+    for routine in user_routines:
         updated_routine = evaluate_routine_status(routine)
         update_routine(updated_routine)
         updated.append(updated_routine)
