@@ -20,7 +20,6 @@ class _EnhancedStatsScreenState extends State<EnhancedStatsScreen> {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: Text('Statistics'),
           backgroundColor: AppColors.darkBlue,
           bottom: TabBar(
             indicatorColor: AppColors.white,
