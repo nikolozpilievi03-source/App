@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'user_service.dart';
 
 class ApiService {
-  // Change this to your IP!
   static const String baseUrl = 'https://new-project-ur5v.onrender.com';
   
   static Future<bool> testConnection() async {
@@ -17,10 +17,11 @@ class ApiService {
   
   static Future<List<Map<String, dynamic>>> getRoutines() async {
     try {
-      print('📡 Fetching routines from: $baseUrl/routines');
+      final userId = await UserService.getDeviceId();
+      print('📡 Fetching routines from: $baseUrl/routines?user_id=$userId');
       
       final response = await http.get(
-        Uri.parse('$baseUrl/routines'),
+        Uri.parse('$baseUrl/routines?user_id=$userId'),
         headers: {'Content-Type': 'application/json'},
       );
       
@@ -41,7 +42,10 @@ class ApiService {
   
   static Future<void> createRoutine(Map<String, dynamic> routine) async {
     try {
-      print('📤 Creating routine: ${routine['title']}');
+      final userId = await UserService.getDeviceId();
+      routine['user_id'] = userId;
+      
+      print('📤 Creating routine: ${routine['title']} for user: $userId');
       
       final response = await http.post(
         Uri.parse('$baseUrl/routines'),
@@ -86,10 +90,11 @@ class ApiService {
   
   static Future<Map<String, dynamic>> getAddictionStats() async {
     try {
-      print('📡 Fetching addiction stats from: $baseUrl/addiction-stats');
+      final userId = await UserService.getDeviceId();
+      print('📡 Fetching addiction stats from: $baseUrl/addiction-stats?user_id=$userId');
       
       final response = await http.get(
-        Uri.parse('$baseUrl/addiction-stats'),
+        Uri.parse('$baseUrl/addiction-stats?user_id=$userId'),
         headers: {'Content-Type': 'application/json'},
       );
       
