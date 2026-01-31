@@ -394,128 +394,142 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _showAddRoutineDialog({DateTime? preselectedDate}) async {
-    final titleController = TextEditingController();
-    TimeOfDay selectedTime = TimeOfDay.now();
-    String personality = 'hood';
-    DateTime selectedDate = preselectedDate ?? DateTime.now();
+  final titleController = TextEditingController();
+  TimeOfDay selectedTime = TimeOfDay.now();
+  String personality = 'hood';
+  DateTime selectedDate = preselectedDate ?? DateTime.now();
 
-    await showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(preselectedDate != null 
-              ? 'Routine for ${DateFormat('MMM d, yyyy').format(preselectedDate)}'
-              : 'Add Routine'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: titleController,
+  await showDialog(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, setDialogState) => AlertDialog(
+        title: Text(preselectedDate != null
+            ? 'Routine for ${DateFormat('MMM d, yyyy').format(preselectedDate)}'
+            : 'Add Routine'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleController,
+                decoration: InputDecoration(
+                  labelText: 'Routine Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              SizedBox(height: 16),
+
+              InkWell(
+                onTap: () async {
+                  final time = await showTimePicker(
+                    context: dialogContext,
+                    initialTime: selectedTime,
+                  );
+                  if (time != null) {
+                    setDialogState(() => selectedTime = time);
+                  }
+                },
+                child: InputDecorator(
                   decoration: InputDecoration(
-                    labelText: 'Routine Name',
+                    labelText: 'Time',
                     border: OutlineInputBorder(),
                   ),
-                ),
-                SizedBox(height: 16),
-                InkWell(
-                  onTap: () async {
-                    final time = await showTimePicker(
-                      context: context,
-                      initialTime: selectedTime,
-                    );
-                    if (time != null) {
-                      setDialogState(() {
-                        selectedTime = time;
-                      });
-                    }
-                  },
-                  child: InputDecorator(
-                    decoration: InputDecoration(
-                      labelText: 'Time',
-                      border: OutlineInputBorder(),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(selectedTime.format(context)),
-                        Icon(Icons.access_time),
-                      ],
-                    ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(selectedTime.format(dialogContext)),
+                      Icon(Icons.access_time),
+                    ],
                   ),
                 ),
-                SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: personality,
-                  decoration: InputDecoration(
-                    labelText: 'AI Voice',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    DropdownMenuItem(value: 'hood', child: Text('🔥 Hood')),
-                    DropdownMenuItem(value: 'calm', child: Text('😌 Calm')),
-                    DropdownMenuItem(value: 'strict', child: Text('💪 Strict')),
-                    DropdownMenuItem(value: 'motivational', child: Text('🏆 Motivational')),
-                  ],
-                  onChanged: (value) {
-                    setDialogState(() {
-                      personality = value!;
-                    });
-                  },
+              ),
+
+              SizedBox(height: 16),
+
+              DropdownButtonFormField<String>(
+                value: personality,
+                decoration: InputDecoration(
+                  labelText: 'AI Voice',
+                  border: OutlineInputBorder(),
                 ),
-              ],
-            ),
+                items: const [
+                  DropdownMenuItem(value: 'hood', child: Text('🔥 Hood')),
+                  DropdownMenuItem(value: 'calm', child: Text('😌 Calm')),
+                  DropdownMenuItem(value: 'strict', child: Text('💪 Strict')),
+                  DropdownMenuItem(value: 'motivational', child: Text('🏆 Motivational')),
+                ],
+                onChanged: (v) => setDialogState(() => personality = v!),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                if (titleController.text.isEmpty) {
-                  return;
-                }
+        ),
 
-                Navigator.pop(context);
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (context) => Center(child: CircularProgressIndicator()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text('Cancel'),
+          ),
+
+          ElevatedButton(
+            onPressed: () async {
+              if (titleController.text.isEmpty) return;
+
+              Navigator.of(dialogContext).pop(); // close form dialog
+
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => Center(child: CircularProgressIndicator()),
+              );
+
+              try {
+                final routine = {
+                  'title': titleController.text,
+                  'routine_date':
+                      '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}',
+                  'routine_time':
+                      '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}',
+                  'personality': personality,
+                  'reminder_minutes_before': 10,
+                  'grace_minutes_after': 5,
+                };
+
+                await ApiService.createRoutine(routine);
+
+                if (mounted) Navigator.of(context).pop(); // close loader
+
+                if (!mounted) return;
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('✅ Routine created!'),
+                    backgroundColor: AppColors.success,
+                  ),
                 );
 
-                try {
-                  final routine = {
-                    'title': titleController.text,
-                    'routine_date': '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}',
-                    'routine_time': '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}',
-                    'personality': personality,
-                    'reminder_minutes_before': 10,
-                    'grace_minutes_after': 5,
-                  };
+                await _loadRoutines();
 
-                  await ApiService.createRoutine(routine);
-                  Navigator.pop(context);
-                  
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('✅ Routine created!'), backgroundColor: AppColors.success),
-                  );
-                  
-                  _loadRoutines();
-                } catch (e) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.error),
-                  );
-                }
-              },
-              child: Text('Create'),
-            ),
-          ],
-        ),
+              } catch (e) {
+                if (mounted) Navigator.of(context).pop();
+
+                if (!mounted) return;
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error: $e'),
+                    backgroundColor: AppColors.error,
+                  ),
+                );
+              }
+            },
+            child: Text('Create'),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
+
 
   Future<void> _editRoutine(int index) async {
     final routine = _routines[index];
