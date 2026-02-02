@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "350391041926",
+    "project_id": "discipline-app-e8077",
+    "storage_bucket": "discipline-app-e8077.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:350391041926:android:c60e937d4d01cdd330b607",
+        "android_client_info": {
+          "package_name": "com.example.discipline_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBpnsHkKqCrOAPfqrnzcIsjjyPOECB20QQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
