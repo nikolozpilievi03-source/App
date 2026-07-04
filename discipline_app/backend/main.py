@@ -2,15 +2,21 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from pydantic import BaseModel as PydanticBaseModel
-from database import init_db, insert_routine
 from models import Routine
 from logic import evaluate_routine_status, background_time_watcher
-from database import get_all_routines, update_routine, update_routine_details
+from database import (
+    init_db,
+    insert_routine,
+    get_all_routines,
+    update_routine,
+    update_routine_details,
+    delete_routine_by_id,
+    log_block,
+    get_block_stats_rows,
+)
 import threading
-import uvicorn
-import sqlite3
-from datetime import datetime
 import platform
+import os
 
 app = FastAPI(title="Discipline App")
 
@@ -22,6 +28,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Check if running on Windows (for local development with addiction monitor)
+IS_WINDOWS = platform.system() == 'Windows'
+
+if IS_WINDOWS:
+    try:
+        from addiction_monitor import addiction_monitor_loop, init_addiction_db
+        ADDICTION_MONITOR_AVAILABLE = True
+    except ImportError:
+        print("⚠️  Addiction monitor not available (Windows-only feature)")
+        ADDICTION_MONITOR_AVAILABLE = False
+
+        def init_addiction_db():
+            pass
+else:
+    ADDICTION_MONITOR_AVAILABLE = False
+
+    def init_addiction_db():
+        # Block tables are created by database.init_db() (works for
+        # both Postgres and SQLite), so nothing extra needed here.
+        pass
+
 
 @app.on_event("startup")
 def startup_event():
@@ -43,74 +71,16 @@ def startup_event():
         )
         monitor.start()
 
-# Check if running on Windows (for local development with addiction monitor)
-IS_WINDOWS = platform.system() == 'Windows'
-
-# Only import Windows-specific code if on Windows
-if IS_WINDOWS:
-    try:
-        from addiction_monitor import addiction_monitor_loop, init_addiction_db, get_block_stats
-        ADDICTION_MONITOR_AVAILABLE = True
-    except ImportError:
-        print("⚠️  Addiction monitor not available (Windows-only feature)")
-        ADDICTION_MONITOR_AVAILABLE = False
-else:
-    ADDICTION_MONITOR_AVAILABLE = False
-    # Create dummy functions for cloud deployment
-    def init_addiction_db():
-        """Initialize addiction database tables (cloud version)"""
-        conn = sqlite3.connect('discipline.db')
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS block_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT,
-                category TEXT NOT NULL,
-                url TEXT,
-                title TEXT,
-                timestamp TEXT NOT NULL,
-                audio_type TEXT
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS block_stats (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT,
-                date TEXT NOT NULL,
-                category TEXT NOT NULL,
-                blocks_count INTEGER DEFAULT 0,
-                UNIQUE(user_id, date, category)
-            )
-        """)
-        
-        conn.commit()
-        conn.close()
-    
-    def get_block_stats(days=7):
-        """Get blocking statistics (cloud version)"""
-        conn = sqlite3.connect('discipline.db')
-        cursor = conn.cursor()
-        
-        cursor.execute("""
-            SELECT date, category, blocks_count
-            FROM block_stats
-            WHERE date >= date('now', '-' || ? || ' days')
-            ORDER BY date DESC
-        """, (days,))
-        
-        results = cursor.fetchall()
-        conn.close()
-        return results
 
 @app.get("/")
 def root():
     return {
         "status": "Backend running successfully",
         "platform": platform.system(),
+        "database": "postgres" if os.environ.get("DATABASE_URL") else "sqlite",
         "addiction_monitor": "active" if ADDICTION_MONITOR_AVAILABLE else "mobile-only"
     }
+
 
 @app.post("/routines")
 def create_routines(routines: List[Routine]):
@@ -118,11 +88,12 @@ def create_routines(routines: List[Routine]):
         insert_routine(routine)
     return {"created": len(routines)}
 
+
 @app.get("/routines")
 def list_routines(user_id: str = "default"):
     # Filter directly in SQL (much faster than fetching everything)
     user_routines = get_all_routines(user_id)
-    
+
     updated = []
     for routine in user_routines:
         updated_routine = evaluate_routine_status(routine)
@@ -130,11 +101,13 @@ def list_routines(user_id: str = "default"):
         updated.append(updated_routine)
     return updated
 
+
 class RoutineUpdate(PydanticBaseModel):
     title: Optional[str] = None
     routine_date: Optional[str] = None
     routine_time: Optional[str] = None
     personality: Optional[str] = None
+
 
 @app.put("/routines/{routine_id}")
 def edit_routine(routine_id: int, updates: RoutineUpdate):
@@ -150,6 +123,7 @@ def edit_routine(routine_id: int, updates: RoutineUpdate):
         return {"updated": routine_id, "message": "Routine updated successfully"}
     return {"error": "Routine not found or nothing to update"}
 
+
 @app.post("/routines/{routine_id}/complete")
 def complete_routine(routine_id: int):
     routines = get_all_routines()
@@ -163,28 +137,38 @@ def complete_routine(routine_id: int):
     update_routine(routine)
     return routine
 
+
+@app.delete("/routines/{routine_id}")
+def delete_routine(routine_id: int):
+    """Delete a routine by ID"""
+    if delete_routine_by_id(routine_id):
+        return {"deleted": routine_id, "message": "Routine deleted successfully"}
+    return {"error": "Routine not found"}
+
+
 @app.get("/addiction-stats")
-def get_addiction_stats():
+def get_addiction_stats(user_id: str = None):
     """Get addiction blocking statistics"""
-    stats = get_block_stats(7)
-    
+    stats = get_block_stats_rows(7, user_id)
+
     # Format for API response
     by_category = {}
     by_date = {}
-    
-    for date, category, count in stats:
+
+    for date_str, category, count in stats:
         if category not in by_category:
             by_category[category] = 0
         by_category[category] += count
-        
-        if date not in by_date:
-            by_date[date] = {}
-        by_date[date][category] = count
-    
+
+        if date_str not in by_date:
+            by_date[date_str] = {}
+        by_date[date_str][category] = count
+
     return {
         "total_by_category": by_category,
         "by_date": by_date
     }
+
 
 @app.post("/log-block")
 def log_block_from_mobile(
@@ -196,49 +180,13 @@ def log_block_from_mobile(
 ):
     """Log a block attempt from mobile app"""
     try:
-        conn = sqlite3.connect('discipline.db')
-        cursor = conn.cursor()
-        
-        # Log the block
-        cursor.execute("""
-            INSERT INTO block_logs (user_id, category, url, title, timestamp, audio_type)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (user_id, category, url, title, datetime.now().isoformat(), audio_type))
-        
-        # Update stats
-        today = datetime.now().strftime('%Y-%m-%d')
-        cursor.execute("""
-            INSERT INTO block_stats (user_id, date, category, blocks_count)
-            VALUES (?, ?, ?, 1)
-            ON CONFLICT(user_id, date, category)
-            DO UPDATE SET blocks_count = blocks_count + 1
-        """, (user_id, today, category))
-        
-        conn.commit()
-        conn.close()
-        
+        log_block(user_id, category, url, title, audio_type)
         return {"success": True, "message": "Block logged"}
-    
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-@app.delete("/routines/{routine_id}")
-def delete_routine(routine_id: int):
-    """Delete a routine by ID"""
-    conn = sqlite3.connect('discipline.db')
-    cursor = conn.cursor()
-    
-    cursor.execute("DELETE FROM routines WHERE id = ?", (routine_id,))
-    conn.commit()
-    
-    deleted_count = cursor.rowcount
-    conn.close()
-    
-    if deleted_count > 0:
-        return {"deleted": routine_id, "message": "Routine deleted successfully"}
-    else:
-        return {"error": "Routine not found"}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)

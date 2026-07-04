@@ -555,8 +555,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     await showDialog(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
           title: Text('Edit Routine'),
           content: SingleChildScrollView(
             child: Column(
@@ -629,13 +629,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   return;
                 }
 
-                Navigator.pop(context);
+                Navigator.of(dialogContext).pop(); // close form dialog
 
                 // Show loading
                 showDialog(
                   context: context,
                   barrierDismissible: false,
-                  builder: (context) => Center(child: CircularProgressIndicator()),
+                  builder: (_) => Center(child: CircularProgressIndicator()),
                 );
 
                 try {
@@ -647,7 +647,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     'personality': personality,
                   });
 
-                  Navigator.pop(context); // Close loading
+                  if (mounted) Navigator.of(context).pop(); // Close loading
+                  if (!mounted) return;
 
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('✅ Routine updated!'), backgroundColor: AppColors.success),
@@ -655,7 +656,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   _loadRoutines();
                 } catch (e) {
-                  Navigator.pop(context); // Close loading
+                  if (mounted) Navigator.of(context).pop(); // Close loading
+                  if (!mounted) return;
 
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('❌ Failed to update: $e'), backgroundColor: AppColors.error),

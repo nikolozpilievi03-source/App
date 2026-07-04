@@ -27,7 +27,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl/routines?user_id=$userId'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(Duration(seconds: 30));
       
       print('📥 Response status: ${response.statusCode}');
       
@@ -55,7 +55,7 @@ class ApiService {
         Uri.parse('$baseUrl/routines'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode([routine]),
-      );
+      ).timeout(Duration(seconds: 30));
       
       print('📥 Response status: ${response.statusCode}');
       
@@ -77,7 +77,7 @@ class ApiService {
       final response = await http.post(
         Uri.parse('$baseUrl/routines/$id/complete'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(Duration(seconds: 30));
       
       print('📥 Response status: ${response.statusCode}');
       
@@ -100,7 +100,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl/addiction-stats?user_id=$userId'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(Duration(seconds: 30));
       
       print('📥 Response status: ${response.statusCode}');
       
@@ -125,7 +125,7 @@ class ApiService {
         Uri.parse('$baseUrl/routines/$id'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode(updates),
-      );
+      ).timeout(Duration(seconds: 30));
 
       print('📥 Response status: ${response.statusCode}');
 
@@ -147,7 +147,7 @@ class ApiService {
       final response = await http.delete(
         Uri.parse('$baseUrl/routines/$id'),
         headers: {'Content-Type': 'application/json'},
-      );
+      ).timeout(Duration(seconds: 30));
       
       print('📥 Response status: ${response.statusCode}');
       
