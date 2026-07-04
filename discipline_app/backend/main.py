@@ -1,10 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
+from typing import List, Optional
+from pydantic import BaseModel as PydanticBaseModel
 from database import init_db, insert_routine
 from models import Routine
 from logic import evaluate_routine_status, background_time_watcher
-from database import get_all_routines, update_routine
+from database import get_all_routines, update_routine, update_routine_details
 import threading
 import uvicorn
 import sqlite3
@@ -119,10 +120,8 @@ def create_routines(routines: List[Routine]):
 
 @app.get("/routines")
 def list_routines(user_id: str = "default"):
-    routines = get_all_routines()
-    
-    # Filter by user_id
-    user_routines = [r for r in routines if getattr(r, 'user_id', None) == user_id]
+    # Filter directly in SQL (much faster than fetching everything)
+    user_routines = get_all_routines(user_id)
     
     updated = []
     for routine in user_routines:
@@ -130,6 +129,26 @@ def list_routines(user_id: str = "default"):
         update_routine(updated_routine)
         updated.append(updated_routine)
     return updated
+
+class RoutineUpdate(PydanticBaseModel):
+    title: Optional[str] = None
+    routine_date: Optional[str] = None
+    routine_time: Optional[str] = None
+    personality: Optional[str] = None
+
+@app.put("/routines/{routine_id}")
+def edit_routine(routine_id: int, updates: RoutineUpdate):
+    """Update a routine's editable fields (title, date, time, personality)"""
+    changed = update_routine_details(
+        routine_id,
+        title=updates.title,
+        routine_date=updates.routine_date,
+        routine_time=updates.routine_time,
+        personality=updates.personality,
+    )
+    if changed:
+        return {"updated": routine_id, "message": "Routine updated successfully"}
+    return {"error": "Routine not found or nothing to update"}
 
 @app.post("/routines/{routine_id}/complete")
 def complete_routine(routine_id: int):

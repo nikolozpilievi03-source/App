@@ -7,7 +7,11 @@ class ApiService {
   
   static Future<bool> testConnection() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/'));
+      // Render free tier sleeps after inactivity - waking up can take ~50s,
+      // so give it a generous timeout instead of failing immediately.
+      final response = await http
+          .get(Uri.parse('$baseUrl/'))
+          .timeout(Duration(seconds: 75));
       return response.statusCode == 200;
     } catch (e) {
       print('Connection test failed: $e');
@@ -113,6 +117,29 @@ class ApiService {
     }
   }
   
+  static Future<void> updateRoutine(int id, Map<String, dynamic> updates) async {
+    try {
+      print('📤 Updating routine: $id');
+
+      final response = await http.put(
+        Uri.parse('$baseUrl/routines/$id'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(updates),
+      );
+
+      print('📥 Response status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        print('✅ Routine updated successfully');
+      } else {
+        throw Exception('Failed to update routine: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error updating routine: $e');
+      rethrow;
+    }
+  }
+
   static Future<void> deleteRoutine(int id) async {
     try {
       print('📤 Deleting routine: $id');

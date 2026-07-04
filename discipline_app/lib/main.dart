@@ -92,14 +92,24 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _testConnection() async {
     await Future.delayed(Duration(seconds: 1));
-    
+
+    // Let the user know the free server may need to wake up
+    Future.delayed(Duration(seconds: 5), () {
+      if (mounted && !_isConnected) {
+        setState(() {
+          _message = 'Waking up server...\nFree hosting sleeps when idle,\nthis can take up to a minute ⏳';
+        });
+      }
+    });
+
     final connected = await ApiService.testConnection();
-    
+
+    if (!mounted) return;
     setState(() {
       _isConnected = connected;
       _message = connected 
           ? 'Connected! ✅' 
-          : 'Cannot connect to backend ❌\n\nMake sure Python server is running';
+          : 'Cannot connect to backend ❌\n\nCheck your internet connection\nand tap Retry';
     });
     
     if (connected) {
@@ -614,25 +624,43 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (titleController.text.isEmpty) {
                   return;
                 }
 
                 Navigator.pop(context);
-                
-                setState(() {
-                  _routines[index]['title'] = titleController.text;
-                  _routines[index]['routine_time'] = 
-                    '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}';
-                  _routines[index]['personality'] = personality;
-                });
-                
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('✅ Routine updated!'), backgroundColor: AppColors.success),
+
+                // Show loading
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (context) => Center(child: CircularProgressIndicator()),
                 );
-                
-                _loadRoutines();
+
+                try {
+                  // Save to backend so the change persists
+                  await ApiService.updateRoutine(routine['id'], {
+                    'title': titleController.text,
+                    'routine_time':
+                        '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}',
+                    'personality': personality,
+                  });
+
+                  Navigator.pop(context); // Close loading
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('✅ Routine updated!'), backgroundColor: AppColors.success),
+                  );
+
+                  _loadRoutines();
+                } catch (e) {
+                  Navigator.pop(context); // Close loading
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('❌ Failed to update: $e'), backgroundColor: AppColors.error),
+                  );
+                }
               },
               child: Text('Save'),
             ),

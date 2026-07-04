@@ -1,118 +1,110 @@
-import sqlite3
-from models import Routine
-from datetime import date, time
+import threading
+import time
+import os
+from datetime import datetime, timedelta
+from database import get_all_routines
+from database import update_routine
+import platform
 
-DB_NAME = "discipline.db"
+# ============================================================
+# TIMEZONE FIX: Render servers run on UTC, but users are in
+# Georgia (UTC+4). Force the server clock to Tbilisi time so
+# reminders and missed-marking happen at the right moment.
+# (time.tzset only exists on Linux, so local Windows dev is unaffected)
+# ============================================================
+os.environ['TZ'] = 'Asia/Tbilisi'
+if hasattr(time, 'tzset'):
+    time.tzset()
+    print(f"🕐 Server timezone set to Asia/Tbilisi (now: {datetime.now().strftime('%H:%M')})")
 
-def get_connection():
-    return sqlite3.connect(DB_NAME, check_same_thread=False)
+# Only import TTS on Windows (for PC monitoring)
+# On cloud servers, reminders will be handled by push notifications
+IS_WINDOWS = platform.system() == 'Windows'
 
-def init_db():
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    # Create table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS routines (
-        id INTEGER PRIMARY KEY,
-        title TEXT,
-        routine_date TEXT,
-        routine_time TEXT,
-        status TEXT,
-        reminder_sent INTEGER,
-        personality TEXT,
-        streak INTEGER,
-        failures INTEGER,
-        user_id TEXT DEFAULT 'default'
-    )
-    """)
-    
-    # Migration: Add user_id column if it doesn't exist
+if IS_WINDOWS:
     try:
-        cursor.execute("ALTER TABLE routines ADD COLUMN user_id TEXT DEFAULT 'default'")
-        print("✅ Added user_id column to routines table")
-    except sqlite3.OperationalError as e:
-        if "duplicate column name" in str(e):
-            print("ℹ️  user_id column already exists")
+        from tts import speak_background
+        TTS_AVAILABLE = True
+        print("✅ TTS available (Windows)")
+    except ImportError:
+        print("⚠️  TTS not available")
+        TTS_AVAILABLE = False
+        def speak_background(text, personality='default'):
+            """Dummy function for when TTS is not available"""
+            print(f"[TTS MOCK] Would speak: {text}")
+else:
+    TTS_AVAILABLE = False
+    print("ℹ️  TTS disabled (cloud deployment - use push notifications)")
+    def speak_background(text, personality='default'):
+        """Dummy function for cloud deployment"""
+        print(f"[TTS MOCK - Cloud] Would speak: {text}")
+        # TODO: Send push notification to mobile app instead
+
+
+def routine_datetime_local(routine):
+    """Combines date and time into a local datetime object."""
+    # This ignores timezones and just looks at the 'wall clock' time
+    return datetime.combine(routine.routine_date, routine.routine_time)
+
+
+def evaluate_routine_status(routine):
+    """
+    Evaluate and update routine status based on current time.
+    Returns the updated routine object.
+    """
+    now = datetime.now()
+    routine_time = datetime.combine(routine.routine_date, routine.routine_time)
+    reminder_time = routine_time - timedelta(minutes=routine.reminder_minutes_before)
+    miss_time = routine_time + timedelta(minutes=routine.grace_minutes_after)
+    
+    # Check if reminder should be triggered
+    if (
+        routine.status == "pending"
+        and not routine.reminder_sent
+        and now >= reminder_time
+        and now < routine_time
+    ):
+        print(f"!!! TRIGGERING REMINDER FOR {routine.title} !!!")
+        
+        # Play TTS if available (Windows), otherwise just log
+        if TTS_AVAILABLE:
+            text = f"Yo! {routine.title} is coming up. Don't forget!"
+            speak_background(text, routine.personality)
         else:
-            print(f"⚠️  Migration error: {e}")
+            # On cloud, this should trigger a push notification to the mobile app
+            # For now, just log it
+            print(f"[REMINDER] {routine.title} - Push notification should be sent here")
+        
+        routine.reminder_sent = True
+        update_routine(routine)
     
-    conn.commit()
-    conn.close()
+    # Check if routine should be marked as missed
+    elif routine.status == "pending" and now >= miss_time:
+        print(f"--- MARKING {routine.title} AS MISSED ---")
+        routine.status = "missed"
+        routine.failures += 1
+        routine.streak = 0
+        
+        update_routine(routine)
+    
+    # Always return the routine object
+    return routine
 
-def insert_routine(routine: Routine):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO routines (
-            title,
-            routine_date,
-            routine_time,
-            status,
-            reminder_sent,
-            personality,
-            streak,
-            failures,
-            user_id
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        routine.title,
-        routine.routine_date.isoformat(),
-        routine.routine_time.strftime("%H:%M"),
-        routine.status,
-        int(routine.reminder_sent),
-        routine.personality,
-        routine.streak,
-        routine.failures,
-        routine.user_id if hasattr(routine, 'user_id') else 'default'
-    ))
-    conn.commit()
-    conn.close()
 
-def get_all_routines(user_id: str = None):
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    if user_id:
-        cursor.execute("SELECT * FROM routines WHERE user_id = ?", (user_id,))
-    else:
-        cursor.execute("SELECT * FROM routines")
-    
-    rows = cursor.fetchall()
-    conn.close()
-    
-    routines = []
-    for row in rows:
-        routines.append(
-            Routine(
-                id=row[0],
-                title=row[1],
-                routine_date=date.fromisoformat(row[2]),
-                routine_time=time.fromisoformat(row[3]),
-                status=row[4],
-                reminder_sent=bool(row[5]),
-                personality=row[6],
-                streak=row[7],
-                failures=row[8],
-                user_id=row[9] if len(row) > 9 else "default"
-            )
-        )
-    return routines
+def background_time_watcher():
+    """This stays! It checks every second."""
+    while True:
+        try:
+            routines = get_all_routines()
+            for routine in routines:
+                evaluate_routine_status(routine)
+        except Exception as e:
+            print(f"Watcher Error: {e}")
+        time.sleep(1)
 
-def update_routine(routine: Routine):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE routines
-        SET status = ?, reminder_sent = ?, streak = ?, failures = ?
-        WHERE id = ?
-    """, (
-        routine.status,
-        int(routine.reminder_sent),
-        routine.streak,
-        routine.failures,
-        routine.id
-    ))
-    conn.commit()
-    conn.close()
+
+def start_background_thread():
+    threading.Thread(
+        target=background_time_watcher,
+        daemon=True
+    ).start()
